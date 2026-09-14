@@ -1,0 +1,61 @@
+name: Poll Canvas announcements
+
+on:
+  schedule:
+    # Times are UTC. GitHub cron has no daylight-saving awareness, and runs are
+    # best-effort (often several minutes late, occasionally skipped entirely).
+    # So instead of one precisely-timed run, this fires four times in the late
+    # morning, which covers both CDT and CST and survives a dropped run.
+    #
+    #   15:05 / 15:35 / 16:05 / 16:35 UTC
+    #   = 10:05 / 10:35 / 11:05 / 11:35 Central during CDT
+    #   =  9:05 /  9:35 / 10:05 / 10:35 Central during CST
+    #
+    # Extra runs are harmless: anything already posted is skipped.
+    - cron: "5,35 15,16 * * *"
+  workflow_dispatch: # lets you run it manually from the Actions tab
+
+# Needed so the job can commit the updated state file back to the repo.
+permissions:
+  contents: write
+
+# Never let two runs overlap and fight over state/seen.json.
+concurrency:
+  group: poll-canvas
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          # Caching one tiny dependency isn't worth it, and this job has
+          # contents:write, so leaving automatic caching off is the safer default.
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check for new announcements
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          CANVAS_FEEDS: ${{ secrets.CANVAS_FEEDS }}
+        run: node index.js
+
+      - name: Save which announcements have been posted
+        run: |
+          if [[ -z "$(git status --porcelain state/seen.json)" ]]; then
+            echo "No state change to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/seen.json
+          git commit -m "Update posted-announcement state"
+          git push
