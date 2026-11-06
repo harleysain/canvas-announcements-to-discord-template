@@ -2,17 +2,18 @@ name: Poll Canvas announcements
 
 on:
   schedule:
-    # Times are UTC. GitHub cron has no daylight-saving awareness, and runs are
-    # best-effort (often several minutes late, occasionally skipped entirely).
-    # So instead of one precisely-timed run, this fires four times in the late
-    # morning, which covers both CDT and CST and survives a dropped run.
+    # Mon / Wed / Fri only (day-of-week 1,3,5), every 30 minutes from 13:00 to
+    # 21:59 UTC. That is 07:07-15:37 US Central in winter, 08:07-16:37 in
+    # summer, so the window covers the Canvas posting time under either.
     #
-    #   15:05 / 15:35 / 16:05 / 16:35 UTC
-    #   = 10:05 / 10:35 / 11:05 / 11:35 Central during CDT
-    #   =  9:05 /  9:35 / 10:05 / 10:35 Central during CST
+    # Why so many slots: GitHub's scheduled runs are best-effort and are
+    # currently being dropped and delayed by hours. The script posts each
+    # announcement at most once per local calendar date, so extra runs cannot
+    # produce duplicates - they only raise the odds that at least one lands.
     #
-    # Extra runs are harmless: anything already posted is skipped.
-    - cron: "5,35 15,16 * * *"
+    # The script also re-checks the weekday itself in its own timezone, so a
+    # cron slot on an unintended day is a no-op rather than a stray post.
+    - cron: "7,37 13-21 * * 1,3,5"
   workflow_dispatch: # lets you run it manually from the Actions tab
 
 # Needed so the job can commit the updated state file back to the repo.
@@ -27,6 +28,9 @@ concurrency:
 jobs:
   poll:
     runs-on: ubuntu-latest
+    # Without this, a hung job holds the concurrency group for GitHub's
+    # 6-hour default and every later scheduled run queues behind it.
+    timeout-minutes: 5
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
