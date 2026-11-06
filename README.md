@@ -1,8 +1,12 @@
 # canvas-announcements-to-discord
 
-Posts new Canvas course announcements to a Discord channel, with Canvas
-formatting (bold, italics, headings, lists, links) converted to Discord
-markdown. Runs on a GitHub Actions schedule, so there is no server to maintain.
+Posts Canvas course announcements to a Discord channel, with Canvas formatting
+(bold, italics, headings, lists, links) converted to Discord markdown. Runs on a
+GitHub Actions schedule, so there is no server to maintain.
+
+It is built for a weekly rhythm: **one announcement written in Canvas on Friday
+morning goes to Discord three times** - once on Friday, then again as a reminder
+on Monday and Wednesday. Each posting carries the `@everyone` mention.
 
 This is **not** a Discord bot. There is no bot application, no token, and no
 always-on process — just a script that wakes up on a schedule, checks the
@@ -16,7 +20,7 @@ announcement feeds, and posts anything new via a webhook.
 | `package.json` | Declares the one dependency (`fast-xml-parser`) |
 | `package-lock.json` | Pins the exact dependency version — `npm ci` fails without it |
 | `.github/workflows/poll.yml` | Runs the script on a schedule and commits the state file |
-| `state/seen.json` | Remembers which announcement IDs have already been posted |
+| `state/seen.json` | Remembers which announcements went out, and on which dates |
 
 ## Setup
 
@@ -32,7 +36,7 @@ Open `state/seen.json`. It must read exactly:
 ```json
 {
   "bootstrapped": false,
-  "seenIds": []
+  "posts": {}
 }
 ```
 
@@ -102,34 +106,83 @@ schedule takes over.
 
 ## Schedule
 
-The cron in `poll.yml` is `5,35 15,16 * * *` — four runs at 15:05, 15:35, 16:05
-and 16:35 UTC. During US Central daylight time that's 10:05 through 11:35 AM,
-sized for a course that posts announcements around 10:00 AM.
+Two things decide when a post happens, and they do different jobs.
 
-**Adjust this for your own timezone and posting time.** GitHub cron is UTC only
-and has no daylight-saving awareness, so a single precisely-timed run drifts by
-an hour twice a year. Running a few times in a window is more robust than
-running once: duplicate runs cost nothing, because anything already posted is
-skipped.
+**`POST_DAYS` in `index.js`** is the real schedule: `["Fri", "Mon", "Wed"]`.
+The script evaluates the weekday in `TIMEZONE` (default `America/Chicago`), so
+it follows local days and does not drift with daylight saving.
 
-Scheduled runs are best-effort. They are commonly several minutes late and are
-occasionally skipped entirely under load, which is the other reason to schedule
-more than one attempt.
+**The cron in `poll.yml`** just decides how often the script gets a chance to
+run: `7,37 13-21 * * 1,3,5`, which is every 30 minutes across the local morning
+and early afternoon on Mon/Wed/Fri - 18 attempts per day.
+
+That many attempts is deliberate. GitHub's scheduled runs are best-effort: the
+docs say they can be delayed or dropped under load, and in practice they are
+sometimes hours late. The script posts each announcement **at most once per
+local calendar date**, so extra runs cannot produce duplicate posts. They only
+raise the odds that at least one run lands while the announcement is fresh.
+
+Because the script re-checks the weekday itself, a cron slot that fires on an
+unintended day is a no-op rather than a stray post.
+
+**If your Canvas post happens at a different time**, widen or shift the UTC
+hours in the cron. US Central is UTC-6 in winter and UTC-5 in summer, so
+`13-21` UTC covers 07:07-15:37 local in winter and 08:07-16:37 in summer.
+
+**If you are in a different timezone**, change `TIMEZONE` in `index.js` to your
+IANA zone (for example `America/New_York`, `Europe/London`) and shift the cron
+hours to match. `TIMEZONE` controls which local day a run counts as; the cron
+controls when runs happen.
 
 **Scheduled workflows only run from the default branch.** If `poll.yml` lives on
 any other branch, the schedule is ignored.
+
+## How the reposting works
+
+Each run, on a posting day, the script:
+
+1. Fetches the feeds and finds the newest announcement still inside the
+   freshness window (`MAX_AGE_DAYS`, default 6 days).
+2. Skips it if it has already been posted on today's local date.
+3. Otherwise posts it, and records today's date against that announcement.
+
+So one Canvas announcement produces one post on each of Friday, Monday and
+Wednesday. The second and third carry a small `Reminder - originally posted
+Fri` subtext line so members can tell a reminder from the original.
+
+**The freshness window is what makes a missed week safe.** If nobody posts to
+Canvas one Friday, the previous week's announcement is by then more than 6 days
+old, so it is not reposted - the channel simply stays quiet. The window has to
+be at least 5 days (Friday to Wednesday) and less than 7 (Friday to the
+following Friday), which is why 6 is the default. **If you move the Canvas post
+to Thursday, raise `MAX_AGE_DAYS` to 7**, or the Wednesday reminder will fall
+outside the window.
+
+Anything new that appears inside the window is also posted on the next posting
+day, so a second announcement in the same week is not lost.
 
 ## Customizing the post
 
 Near the top of `index.js`:
 
+- `POST_DAYS` (default `["Fri", "Mon", "Wed"]`) — the days an announcement goes
+  out. Three entries means three postings. Use short weekday names.
+- `TIMEZONE` (default `"America/Chicago"`) — the zone the weekday and the
+  once-per-day rule are evaluated in.
+- `MAX_AGE_DAYS` (default 6) — how fresh an announcement must be to be posted or
+  reposted. See the freshness note above before changing it.
+- `REPOST_NOTE` (default `"Reminder - originally posted {weekday}"`) — the
+  subtext line on the 2nd and 3rd posting. `""` removes it, making all three
+  postings identical.
 - `MENTION` (default `"@everyone"`) — prefixed to every post. Set to `""` for no
   mention, or use `"@here"` or a role like `"<@&123456789>"`.
 - `MAX_POSTS_PER_RUN` (default 10) — caps messages per run so a burst doesn't hit
   Discord's rate limit. Leftovers post on the next run.
-- `MAX_REMEMBERED_IDS` (default 500) — how many IDs to keep before old ones roll
-  off.
+- `MAX_REMEMBERED_IDS` (default 500) — how many announcements to remember before
+  old ones roll off.
 - `DELAY_BETWEEN_POSTS_MS` (default 1200) — spacing between messages.
+- `REQUEST_TIMEOUT_MS` (default 20000) — ceiling on any single HTTP request, so a
+  stalled Canvas connection cannot hang the job.
 
 In `buildMessage`, the body is capped at 1500 characters and the course label is
 the `-#` line at the end. In `htmlToMarkdown`, headings map to `#`/`##`/`###`;
@@ -138,14 +191,28 @@ renders them as bold instead.
 
 ## Testing without waiting for a new announcement
 
-Open `state/seen.json`, delete one ID from `seenIds`, commit, and run the
-workflow manually. That announcement is treated as new and posts once. The run
-re-adds the ID, so it won't repeat. Handy for previewing formatting changes.
+**To replay the current announcement**, open `state/seen.json` and delete
+today's date from that announcement's list (or delete its whole entry), commit,
+and run the workflow manually. It will post again on the next run.
+
+**To test the schedule without waiting for the day**, set `OVERRIDE_NOW` to an
+ISO timestamp and the run is evaluated as if it were that moment. Locally:
+
+```
+OVERRIDE_NOW=2026-11-09T09:07:00-06:00 node index.js
+```
+
+Leave it unset in normal operation.
 
 ## Things worth knowing
 
-**Failed posts retry automatically.** If Discord rejects a message, that ID is
-deliberately left out of the state file so the next run tries again.
+**Failed posts retry automatically.** If Discord rejects a message, today's date
+is deliberately left unrecorded, so a later run that day tries again.
+
+**Upgrading from the earlier one-post-per-announcement version** is automatic.
+The old `seenIds` list is converted on first run, and each entry is credited
+with one prior posting - so the changeover week gets its Monday and Wednesday
+reminders without the backlog being reposted.
 
 **A broken feed doesn't stop the others.** Each feed is fetched independently;
 failures are logged and the rest continue.
