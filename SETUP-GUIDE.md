@@ -1,8 +1,10 @@
 # Setting up Canvas announcements in Discord
 
-This walks you through connecting a Canvas class to a Discord channel, so that
-when your instructor posts an announcement, it automatically shows up in Discord
-with an `@everyone` notification.
+This walks you through connecting a Canvas class to a Discord channel.
+
+One announcement written in Canvas on Friday morning gets posted to Discord
+three times: on Friday, then again as a reminder on Monday and Wednesday. Each
+one notifies the channel with `@everyone`.
 
 **You don't need to know how to code.** You'll be copying and pasting a few web
 addresses. Plan on about 20 minutes.
@@ -183,48 +185,47 @@ That means it's remembering correctly. You're done with setup.
 
 ---
 
-## Step 8 — Set the time it checks
+## Step 8 — Check the timezone
 
-Out of the box it checks four times between roughly 10:05 and 11:35 AM US
-Central time. If your class posts announcements at a different time, or you're
-in a different timezone, change this.
+The schedule is already set up for Monday, Wednesday and Friday. The one thing
+worth checking is the timezone, because that decides which local day a run
+counts as.
 
-1. Go back to the **Code** tab
-2. Click the folder `.github`, then `workflows`, then the file `poll.yml`
-3. Click the **pencil icon** (top right) to edit
-4. Find the line that looks like this:
+1. Go to the **Code** tab and click `index.js`
+2. Click the **pencil icon** (top right) to edit
+3. Near the top, find this line:
 
    ```
-       - cron: "5,35 15,16 * * *"
+   const TIMEZONE = "America/Chicago";
    ```
 
-5. Change the two numbers `15,16` to the hours you want, in **UTC**
-6. Click **Commit changes**, then **Commit changes** again in the popup
+4. If you are not in US Central time, replace it with your own zone — for
+   example `"America/New_York"`, `"America/Denver"`, `"America/Los_Angeles"`, or
+   `"Europe/London"`
+5. Click **Commit changes**, then **Commit changes** again in the popup
 
-**Picking the hours.** GitHub only understands UTC, so you have to convert. US
-Central is UTC minus 5 in summer, minus 6 in winter. Some common choices:
+**If your Canvas announcement goes up outside roughly 7 AM – 3 PM your local
+time**, the checking window needs shifting too. That one is fiddlier (the
+schedule is written in UTC), so send a message rather than guessing — say what
+time the announcement usually appears and it can be adjusted for you.
 
-| You want it to check around | Use |
-| --- | --- |
-| 8–9 AM Central | `5,35 13,14 * * *` |
-| 10–11 AM Central | `5,35 15,16 * * *` (the default) |
-| Noon–1 PM Central | `5,35 17,18 * * *` |
-| Every hour, 8 AM – 5 PM Central | `5,35 13-22 * * *` |
-
-Two things worth knowing. The schedule doesn't adjust for daylight saving, so
-everything shifts an hour in November and back in March — which is why it checks
-across a two-hour window rather than at one exact minute. And GitHub's scheduled
-runs are best-effort: usually a few minutes late, occasionally skipped. Checking
-several times covers for both. Extra checks cost nothing, because a run with
-nothing new to post does nothing.
-
----
+> **Why it checks so many times.** The schedule runs every 30 minutes through
+> the morning on those three days. GitHub's scheduled jobs are unreliable —
+> often minutes late, sometimes skipped entirely — so checking often is how you
+> make sure at least one lands. It cannot cause duplicate posts: the same
+> announcement is only ever posted once per day, no matter how many times the
+> check runs.
 
 ## What to expect from here
 
-The next time your instructor posts an announcement, it'll show up in Discord at
-the next scheduled check — with `@everyone`, the announcement title in bold, and
-the text with its formatting preserved.
+The next time an announcement is posted in Canvas on a Friday morning, it shows
+up in Discord at the next scheduled check — with `@everyone`, the title in bold,
+and the text with its formatting preserved. The same announcement is posted
+again on Monday and on Wednesday, with a small "Reminder" line above the title.
+
+**If nobody posts to Canvas one week, Discord stays quiet.** The reminders only
+repeat an announcement from the last few days, so an old one never gets dragged
+back up.
 
 **It only looks back a little way.** Canvas feeds typically only list the 15 most
 recent announcements, and checks happen in a window each morning, so an
@@ -240,10 +241,16 @@ You don't have to wait for a new announcement:
 
 1. **Code** tab → click the `state` folder → click `seen.json`
 2. Click the **pencil icon** to edit
-3. Delete one of the long `"tag:canvas..."` lines, including the comma at the
-   end of it
+3. Find the most recent `"tag:canvas..."` entry. It has a list of dates under
+   it. Delete the dates, leaving `[]` — so it looks like:
+
+   ```
+   "tag:canvas.instructure.com,...": [],
+   ```
+
 4. **Commit changes**
 5. **Actions** tab → **Poll Canvas announcements** → **Run workflow**
 
-That one announcement gets treated as new and posts to Discord. It won't post
-again afterward.
+If today is a Monday, Wednesday or Friday, and that announcement is less than
+six days old, it posts to Discord again. If nothing appears, it is one of those
+two conditions — the log for the run will say which.
