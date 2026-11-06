@@ -1,4 +1,12 @@
 {
-  "bootstrapped": false,
-  "seenIds": []
+  "bootstrapped": true,
+  "posts": {
+    "tag:canvas.instructure.com,2026-10-16:/discussion_topics/discussion_topic_9001": [],
+    "tag:canvas.instructure.com,2026-11-06:/discussion_topics/discussion_topic_9002": [
+      "2026-11-06",
+      "2026-11-09",
+      "2026-11-11"
+    ]
+  },
+  "updatedAt": "2026-11-11T14:07:00.000Z"
 }
